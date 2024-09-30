@@ -3,49 +3,86 @@
 package loader
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"log"
+	"time"
 
 	"tidbyt.dev/pixlet/encode"
 	"tidbyt.dev/pixlet/runtime"
+	"tidbyt.dev/pixlet/schema"
 )
 
 // Loader is a structure to provide applet loading when a file changes or on
 // demand.
 type Loader struct {
-	filename         string
+	fs               fs.FS
 	fileChanges      chan bool
 	watch            bool
 	applet           runtime.Applet
 	configChanges    chan map[string]string
 	requestedChanges chan bool
-	updatesChan      chan string
-	resultsChan      chan string
+	updatesChan      chan Update
+	resultsChan      chan Update
+	maxDuration      int
+	initialLoad      chan bool
+	timeout          int
+	renderGif		 bool
+}
+
+type Update struct {
+	Image     string
+	ImageType string
+	Schema    string
+	Err       error
 }
 
 // NewLoader instantiates a new loader structure. The loader will read off of
 // fileChanges channel and write updates to the updatesChan. Updates are base64
 // encoded WebP strings. If watch is enabled, both file changes and on demand
 // requests will send updates over the updatesChan.
-func NewLoader(filename string, watch bool, fileChanges chan bool, updatesChan chan string) *Loader {
+func NewLoader(
+	fs fs.FS,
+	watch bool,
+	fileChanges chan bool,
+	updatesChan chan Update,
+	maxDuration int,
+	timeout int,
+	renderGif bool,
+) (*Loader, error) {
 	l := &Loader{
-		filename:         filename,
+		fs:               fs,
 		fileChanges:      fileChanges,
 		watch:            watch,
 		applet:           runtime.Applet{},
 		updatesChan:      updatesChan,
 		configChanges:    make(chan map[string]string, 100),
 		requestedChanges: make(chan bool, 100),
-		resultsChan:      make(chan string, 100),
+		resultsChan:      make(chan Update, 100),
+		maxDuration:      maxDuration,
+		initialLoad:      make(chan bool),
+		timeout:          timeout,
+		renderGif:        renderGif,
 	}
+
+	cache := runtime.NewInMemoryCache()
+	runtime.InitHTTP(cache)
+	runtime.InitCache(cache)
 
 	if !l.watch {
-		loadScript(&l.applet, l.filename)
+		app, err := loadScript("app-id", l.fs)
+		l.markInitialLoadComplete()
+		if err != nil {
+			return nil, err
+		} else {
+			l.applet = *app
+		}
 	}
 
-	return l
+	return l, nil
 }
 
 // Run executes the main loop. If there are config changes, those are recorded.
@@ -60,23 +97,40 @@ func (l *Loader) Run() error {
 		case c := <-l.configChanges:
 			config = c
 		case <-l.requestedChanges:
-			webp, err := l.loadApplet(config)
+			up := Update{}
+
+			img, err := l.loadApplet(config)
 			if err != nil {
 				log.Printf("error loading applet: %v", err)
-				l.resultsChan <- ""
-				continue
+				up.Err = err
+			} else {
+				up.Image = img
+				up.ImageType = "webp"
+				if l.renderGif {
+					up.ImageType = "gif"
+				}
 			}
-			l.updatesChan <- webp
-			l.resultsChan <- webp
-		case <-l.fileChanges:
-			log.Printf("detected updates for %s, reloading\n", l.filename)
 
-			webp, err := l.loadApplet(config)
+			l.updatesChan <- up
+			l.resultsChan <- up
+		case <-l.fileChanges:
+			log.Println("detected updates, reloading")
+			up := Update{}
+
+			img, err := l.loadApplet(config)
 			if err != nil {
-				log.Printf("error reloading applet: %v", err)
-				continue
+				log.Printf("error loading applet: %v", err)
+				up.Err = err
+			} else {
+				up.Image = img
+				up.ImageType = "webp"
+				if l.renderGif {
+					up.ImageType = "gif"
+				}
+				up.Schema = string(l.applet.SchemaJSON)
 			}
-			l.updatesChan <- webp
+
+			l.updatesChan <- up
 		}
 	}
 }
@@ -92,42 +146,72 @@ func (l *Loader) LoadApplet(config map[string]string) (string, error) {
 	l.configChanges <- config
 	l.requestedChanges <- true
 	result := <-l.resultsChan
-	if result == "" {
-		return "", fmt.Errorf("encountered and error loading applet")
+	return result.Image, result.Err
+}
+
+func (l *Loader) GetSchema() []byte {
+	<-l.initialLoad
+
+	s := l.applet.SchemaJSON
+	if len(s) > 0 {
+		return s
 	}
-	return result, nil
+
+	b, _ := json.Marshal(&schema.Schema{})
+	return b
+}
+
+func (l *Loader) CallSchemaHandler(ctx context.Context, handlerName, parameter string) (string, error) {
+	<-l.initialLoad
+	return l.applet.CallSchemaHandler(ctx, handlerName, parameter)
 }
 
 func (l *Loader) loadApplet(config map[string]string) (string, error) {
 	if l.watch {
-		loadScript(&l.applet, l.filename)
+		app, err := loadScript("app-id", l.fs)
+		l.markInitialLoadComplete()
+		if err != nil {
+			return "", err
+		} else {
+			l.applet = *app
+		}
 	}
 
-	roots, err := l.applet.Run(config)
+	ctx, _ := context.WithTimeoutCause(
+		context.Background(),
+		time.Duration(l.timeout)*time.Millisecond,
+		fmt.Errorf("timeout after %dms", l.timeout),
+	)
+
+	roots, err := l.applet.RunWithConfig(ctx, config)
 	if err != nil {
 		return "", fmt.Errorf("error running script: %w", err)
 	}
 
-	webp, err := encode.ScreensFromRoots(roots).EncodeWebP()
+	screens := encode.ScreensFromRoots(roots)
+
+	maxDuration := l.maxDuration
+	if screens.ShowFullAnimation {
+		maxDuration = 0
+	}
+
+	var img []byte
+	if l.renderGif {
+		img, err = screens.EncodeGIF(maxDuration)
+	} else {
+		img, err = screens.EncodeWebP(maxDuration)
+	}
 	if err != nil {
 		return "", fmt.Errorf("error rendering: %w", err)
 	}
-
-	return base64.StdEncoding.EncodeToString(webp), nil
+	return base64.StdEncoding.EncodeToString(img), nil
 }
 
-func loadScript(applet *runtime.Applet, filename string) error {
-	src, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", filename, err)
+func (l *Loader) markInitialLoadComplete() {
+	// safely close the l.initialLoad channel to signal that the initial load is complete
+	select {
+	case <-l.initialLoad:
+	default:
+		close(l.initialLoad)
 	}
-
-	runtime.InitCache(runtime.NewInMemoryCache())
-
-	err = applet.Load(filename, src, nil)
-	if err != nil {
-		return fmt.Errorf("failed to load applet: %w", err)
-	}
-
-	return nil
 }

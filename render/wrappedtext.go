@@ -4,7 +4,9 @@ import (
 	"image"
 	"image/color"
 
-	"github.com/fogleman/gg"
+	"github.com/tidbyt/gg"
+
+	"golang.org/x/image/font"
 )
 
 // WrappedText draws multi-line text.
@@ -13,18 +15,25 @@ import (
 // area. If not set, WrappedText will use as much vertical and
 // horizontal space as possible to fit the text.
 //
+// Alignment of the text is controlled by passing one of the following `align` values:
+// - `"left"`: align text to the left
+// - `"center"`: align text in the center
+// - `"right"`: align text to the right
+//
 // DOC(Content): The text string to draw
 // DOC(Font): Desired font face
 // DOC(Height): Limits height of the area on which text may be drawn
 // DOC(Width): Limits width of the area on which text may be drawn
 // DOC(LineSpacing): Controls spacing between lines
 // DOC(Color): Desired font color
-//
+// DOC(Align): Text Alignment
 // EXAMPLE BEGIN
 // render.WrappedText(
-//       content="this is a multi-line text string",
-//       width=50,
-//       color="#fa0",
+//
+//	content="this is a multi-line text string",
+//	width=50,
+//	color="#fa0",
+//
 // )
 // EXAMPLE END
 type WrappedText struct {
@@ -36,14 +45,27 @@ type WrappedText struct {
 	Width       int
 	LineSpacing int
 	Color       color.Color
+	Align       string
+
+	face font.Face
 }
 
-func (tw WrappedText) Paint(bounds image.Rectangle, frameIdx int) image.Image {
-	face := Font[DefaultFontFace]
-	if tw.Font != "" {
-		face = Font[tw.Font]
+func (tw *WrappedText) Init() error {
+	if tw.Font == "" {
+		tw.Font = DefaultFontFace
 	}
 
+	face, err := GetFont(tw.Font)
+	if err != nil {
+		return err
+	}
+
+	tw.face = face
+
+	return nil
+}
+
+func (tw *WrappedText) PaintBounds(bounds image.Rectangle, frameIdx int) image.Rectangle {
 	// The bounds provided by user or parent widget
 	width := tw.Width
 	if width == 0 {
@@ -53,13 +75,16 @@ func (tw WrappedText) Paint(bounds image.Rectangle, frameIdx int) image.Image {
 	if height == 0 {
 		height = bounds.Dy()
 	}
-
+	linespace := float64(tw.LineSpacing)
+	if linespace <= 0 {
+		linespace = 0
+	}
 	// Compute size of multi line string
 	//
 	// NOTE: Can't use dc.MeasureMultilineString() here. It only
 	// deals with texts that have actual \n in them.
 	dc := gg.NewContext(width, 0)
-	dc.SetFontFace(face)
+	dc.SetFontFace(tw.face)
 	w := 0.0
 	h := 0.0
 	for _, line := range dc.WordWrap(tw.Content, float64(width)) {
@@ -67,7 +92,7 @@ func (tw WrappedText) Paint(bounds image.Rectangle, frameIdx int) image.Image {
 		if lw > w {
 			w = lw
 		}
-		h += lh
+		h += lh + linespace
 	}
 
 	// Size of drawing context
@@ -87,12 +112,24 @@ func (tw WrappedText) Paint(bounds image.Rectangle, frameIdx int) image.Image {
 		height = bounds.Dy()
 	}
 
-	metrics := face.Metrics()
+	return image.Rect(0, 0, width, height)
+}
+
+func (tw *WrappedText) Paint(dc *gg.Context, bounds image.Rectangle, frameIdx int) {
+	// Text alignment
+	align := gg.AlignLeft
+	if tw.Align == "center" {
+		align = gg.AlignCenter
+	} else if tw.Align == "right" {
+		align = gg.AlignRight
+	}
+
+	width := tw.PaintBounds(bounds, frameIdx).Dx()
+
+	metrics := tw.face.Metrics()
 	descent := metrics.Descent.Floor()
 
-	// And draw
-	dc = gg.NewContext(width, height)
-	dc.SetFontFace(face)
+	dc.SetFontFace(tw.face)
 	if tw.Color != nil {
 		dc.SetColor(tw.Color)
 	} else {
@@ -107,12 +144,10 @@ func (tw WrappedText) Paint(bounds image.Rectangle, frameIdx int) image.Image {
 		0,
 		float64(width),
 		(float64(tw.LineSpacing)+dc.FontHeight())/dc.FontHeight(),
-		gg.AlignLeft,
+		align,
 	)
-
-	return dc.Image()
 }
 
-func (tw WrappedText) FrameCount() int {
+func (tw *WrappedText) FrameCount() int {
 	return 1
 }

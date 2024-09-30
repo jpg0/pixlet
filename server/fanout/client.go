@@ -28,7 +28,7 @@ const (
 type Client struct {
 	fo   *Fanout
 	conn *websocket.Conn
-	send chan string
+	send chan WebsocketEvent
 	quit chan bool
 }
 
@@ -40,7 +40,7 @@ func (f *Fanout) NewClient(conn *websocket.Conn) *Client {
 	c := &Client{
 		fo:   f,
 		conn: conn,
-		send: make(chan string, channelSize),
+		send: make(chan WebsocketEvent, channelSize),
 		quit: make(chan bool, 1),
 	}
 
@@ -52,9 +52,9 @@ func (f *Fanout) NewClient(conn *websocket.Conn) *Client {
 	return c
 }
 
-// Send is used to send a webp message to the client.
-func (c *Client) Send(webp string) {
-	c.send <- webp
+// Send is used to send an image message to the client.
+func (c *Client) Send(event WebsocketEvent) {
+	c.send <- event
 }
 
 // Quit will close the connection and unregiseter it from the Fanout.
@@ -82,7 +82,7 @@ func (c *Client) reader() {
 	}
 }
 
-// writer writes webp events over the socket when it recieves messages via
+// writer writes image events over the socket when it recieves messages via
 // Send(). It also sends pings to ensure the connection stays alive.
 func (c *Client) writer() {
 	ticker := time.NewTicker(pingPeriod)
@@ -92,11 +92,7 @@ func (c *Client) writer() {
 		select {
 		case <-c.quit:
 			return
-		case webp := <-c.send:
-			event := WebsocketEvent{
-				Type:    EventTypeWebP,
-				Message: webp,
-			}
+		case event := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteJSON(event); err != nil {
 				c.Quit()

@@ -9,19 +9,19 @@ biased.
 
 You should be able to run the Pixlet CLI like so:
 
-`$ pixlet render examples/clock.star`
+`$ pixlet render examples/clock/clock.star`
 
 This should in turn run `clock.star` and produce a `clock.webp` file.
 
 ```console
-$ file examples/clock.webp
-examples/clock.webp: RIFF (little-endian) data, Web/P image
+$ file examples/clock/clock.webp
+examples/clock/clock.webp: RIFF (little-endian) data, Web/P image
 ```
 
 For local development, its often convenient to run pixlet in "serve"
 mode:
 
-`$ pixlet serve --watch examples/clock.star`
+`$ pixlet serve --watch examples/clock/clock.star`
 
 Direct your web browser to http://localhost:8080, and your rendered app will
 appear.
@@ -56,7 +56,7 @@ To get closer to a truly useful Pixlet app, we'll be pulling in some
 Bitcoin data. CoinDesk's [Bitcoin Price Index
 API](https://www.coindesk.com/coindesk-api) is free to use and
 requires no authentication. We'll use Starlib's [http
-module](https://github.com/qri-io/starlib/tree/master/html) to
+module](https://github.com/qri-io/starlib/tree/master/http) to
 retrieve the data.
 
 Pixlet includes several modules from the
@@ -273,4 +273,4 @@ we'd see a cache miss as the old record has expired.
 
 ## What's next?
 
-Take a look at the [Widget reference](widgets.md), and start hacking!
+Take a look at the guide on [authoring apps](authoring_apps.md), the [Widget reference](widgets.md), and start hacking!

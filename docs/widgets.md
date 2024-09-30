@@ -10,6 +10,15 @@ The easiest way to get started is probably to take a look at some of
 the [examples](../examples/), and then refer to the detailed Widget
 documentation (this document) when the need arises.
 
+A quick note about colors.  When specifying colors, use a CSS-like
+hexdecimal color specification.  Pixlet supports "#rgb", "#rrggbb",
+"#rgba", and "#rrggbbaa" color specifications.
+
+For animated widgets like Marquee, you can also call `frame_count()`
+to work out how many frames are required to display the whole
+animation. You can also call `size()` on dynamically-sized widgets
+like Text to get the width and height.
+
 
 ## Animation
 Animations turns a list of children into an animation, where each
@@ -21,7 +30,7 @@ weird. Think and fix.
 #### Attributes
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
-| `children` | `list` | Children to use as frames in the animation | N |
+| `children` | `[Widget]` | Children to use as frames in the animation | N |
 
 #### Example
 ```
@@ -118,7 +127,7 @@ one of the following `cross_align` values:
 #### Attributes
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
-| `children` | `list` | Child widgets to lay out | **Y** |
+| `children` | `[Widget]` | Child widgets to lay out | **Y** |
 | `main_align` | `str` | Alignment along vertical main axis | N |
 | `cross_align` | `str` | Alignment along horizontal cross axis | N |
 | `expanded` | `bool` | Column should expand to fill all available vertical space | N |
@@ -152,7 +161,7 @@ render.Column(
 
 ## Image
 Image renders the binary image data passed via `src`. Supported
-formats include PNG, JPEG and GIF.
+formats include PNG, JPEG, GIF, and SVG.
 
 If `width` or `height` are set, the image will be scaled
 accordingly, with nearest neighbor interpolation. Otherwise the
@@ -165,7 +174,7 @@ the `delay` attribute.
 #### Attributes
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
-| `src` | `str` | Binary image data | **Y** |
+| `src` | `str` | Binary image data or SVG text | **Y** |
 | `width` | `int` | Scale image to this width | N |
 | `height` | `int` | Scale image to this height | N |
 | `delay` | `int` | (Read-only) Frame delay in ms, for animated GIFs | N |
@@ -188,6 +197,12 @@ If the child's width fits fully, it will not scroll.
 The `offset_start` and `offset_end` parameters control the position
 of the child in the beginning and the end of the animation.
 
+Alignment for a child that fits fully along the horizontal/vertical axis is controlled by passing
+one of the following `align` values:
+- `"start"`: place child at the left/top
+- `"end"`: place child at the right/bottom
+- `"center"`: place child at the center
+
 #### Attributes
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
@@ -197,6 +212,8 @@ of the child in the beginning and the end of the animation.
 | `offset_start` | `int` | Position of child at beginning of animation | N |
 | `offset_end` | `int` | Position of child at end of animation | N |
 | `scroll_direction` | `str` | Direction to scroll, 'vertical' or 'horizontal', default is horizontal | N |
+| `align` | `str` | Alignment when contents fit on screen, 'start', 'center' or 'end', default is start | N |
+| `delay` | `int` | Delay the scroll of the animation by a certain number of frames, default is 0 | N |
 
 #### Example
 ```
@@ -222,8 +239,102 @@ accordingly.
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
 | `child` | `Widget` | The Widget to place padding around | **Y** |
-| `pad` | `insets` | Padding around the child | N |
+| `pad` | `int / (int, int, int, int)` | Padding around the child | N |
 | `expanded` | `bool` | This is a confusing parameter | N |
+| `color` | `color` | Background color | N |
+
+
+
+## PieChart
+PieChart draws a circular pie chart of size `diameter`. It takes two
+arguments for the data: parallel lists `colors` and `weights` representing
+the shading and relative sizes of each data entry.
+
+#### Attributes
+| Name | Type | Description | Required |
+| --- | --- | --- | --- |
+| `colors` | `[color]` | List of color hex codes | **Y** |
+| `weights` | `[float]` | List of numbers corresponding to the relative size of each color | **Y** |
+| `diameter` | `int` | Diameter of the circle | **Y** |
+
+#### Example
+```
+render.PieChart(
+     colors = [ "#fff", "#0f0", "#00f" ],
+     weights  = [ 180, 135, 45 ],
+     diameter = 30,
+)
+```
+![](img/widget_PieChart_0.gif)
+
+
+## Plot
+Plot is a widget that draws a data series.
+
+#### Attributes
+| Name | Type | Description | Required |
+| --- | --- | --- | --- |
+| `data` | `[(float, float)]` | A list of 2-tuples of numbers | **Y** |
+| `width` | `int` | Limits Plot width | **Y** |
+| `height` | `int` | Limits Plot height | **Y** |
+| `color` | `color` | Line color, default is '#fff' | N |
+| `color_inverted` | `color` | Line color for Y-values below 0 | N |
+| `x_lim` | `(float, float)` | Limit X-axis to a range | N |
+| `y_lim` | `(float, float)` | Limit Y-axis to a range | N |
+| `fill` | `bool` | Paint surface between line and X-axis | N |
+| `chart_type` | `str` | Specifies the type of chart to render, "scatter" or "line", default is "line" | N |
+| `fill_color` | `color` | Fill color for Y-values above 0 | N |
+| `fill_color_inverted` | `color` | Fill color for Y-values below 0 | N |
+
+#### Example
+```
+render.Plot(
+  data = [
+    (0, 3.35),
+    (1, 2.15),
+    (2, 2.37),
+    (3, -0.31),
+    (4, -3.53),
+    (5, 1.31),
+    (6, -1.3),
+    (7, 4.60),
+    (8, 3.33),
+    (9, 5.92),
+  ],
+  width = 64,
+  height = 32,
+  color = "#0f0",
+  color_inverted = "#f00",
+  x_lim = (0, 9),
+  y_lim = (-5, 7),
+  fill = True,
+),
+```
+![](img/widget_Plot_0.gif)
+
+
+## Root
+Every Widget tree has a Root.
+
+The child widget, and all its descendants, will be drawn on a 64x32
+canvas. Root places its child in the upper left corner of the
+canvas.
+
+If the tree contains animated widgets, the resulting animation will
+run with _delay_ milliseconds per frame.
+
+If the tree holds time sensitive information which must never be
+displayed past a certain point in time, pass _MaxAge_ to specify
+an expiration time in seconds. Display devices use this to avoid
+displaying stale data in the event of e.g. connectivity issues.
+
+#### Attributes
+| Name | Type | Description | Required |
+| --- | --- | --- | --- |
+| `child` | `Widget` | Widget to render | **Y** |
+| `delay` | `int` | Frame delay in milliseconds | N |
+| `max_age` | `int` | Expiration time in seconds | N |
+| `show_full_animation` | `bool` | Request animation is shown in full, regardless of app cycle speed | N |
 
 
 
@@ -253,7 +364,7 @@ one of the following `cross_align` values:
 #### Attributes
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
-| `children` | `list` | Child widgets to lay out | **Y** |
+| `children` | `[Widget]` | Child widgets to lay out | **Y** |
 | `main_align` | `str` | Alignment along horizontal main axis | N |
 | `cross_align` | `str` | Alignment along vertical cross axis | N |
 | `expanded` | `bool` | Row should expand to fill all available horizontal space | N |
@@ -285,6 +396,35 @@ render.Row(
 ![](img/widget_Row_1.gif)
 
 
+## Sequence
+Sequence renders a list of child widgets in sequence.
+
+Each child widget is rendered for the duration of its
+frame count, then the next child wiget in the list will
+be rendered and so on.
+
+It comes in quite useful when chaining animations.
+If you want to know more about that, go check
+out the [animation](animation.md) documentation.
+
+#### Attributes
+| Name | Type | Description | Required |
+| --- | --- | --- | --- |
+| `children` | `[Widget]` | List of child widgets | **Y** |
+
+#### Example
+```
+render.Sequence(
+  children = [
+    animation.Transformation(...),
+    animation.Transformation(...),
+    ...
+  ],
+),
+```
+![](img/widget_Sequence_0.gif)
+
+
 ## Stack
 Stack draws its children on top of each other.
 
@@ -295,7 +435,7 @@ fit all its children.
 #### Attributes
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
-| `children` | `list` | Widgets to stack | **Y** |
+| `children` | `[Widget]` | Widgets to stack | **Y** |
 
 #### Example
 ```
@@ -342,6 +482,11 @@ The optional `width` and `height` parameters limit the drawing
 area. If not set, WrappedText will use as much vertical and
 horizontal space as possible to fit the text.
 
+Alignment of the text is controlled by passing one of the following `align` values:
+- `"left"`: align text to the left
+- `"center"`: align text in the center
+- `"right"`: align text to the right
+
 #### Attributes
 | Name | Type | Description | Required |
 | --- | --- | --- | --- |
@@ -351,6 +496,7 @@ horizontal space as possible to fit the text.
 | `width` | `int` | Limits width of the area on which text may be drawn | N |
 | `linespacing` | `int` | Controls spacing between lines | N |
 | `color` | `color` | Desired font color | N |
+| `align` | `str` | Text Alignment | N |
 
 #### Example
 ```
